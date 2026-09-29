@@ -45,7 +45,6 @@ const (
 
 var emptyObjectSchema = json.RawMessage(`{"type":"object","additionalProperties":false}`)
 
-
 // Meta is catalog metadata for an action binary.
 type Meta struct {
 	Name        string `json:"name"`
@@ -148,15 +147,15 @@ func Main[In, Out any](meta Meta, fn func(context.Context, In) (Out, error)) {
 		}
 		return
 	}
-	Run(fn)
+	run(fn)
 }
 
-// Run reads JSON input, validates it against the inferred input schema, invokes
+// run reads JSON input, validates it against the inferred input schema, invokes
 // fn, validates the output against the inferred output schema, and writes JSON.
 // By default it uses stdin/stdout. When GENAI_INPUT_FILE / GENAI_OUTPUT_FILE
 // are set, those paths are used instead (for Argo / scratch images).
 // On error it prints the message to stderr and exits with status 1.
-func Run[In, Out any](fn func(context.Context, In) (Out, error)) {
+func run[In, Out any](fn func(context.Context, In) (Out, error)) {
 	ctx := context.Background()
 	inR, inCloser, err := openInput()
 	if err != nil {
