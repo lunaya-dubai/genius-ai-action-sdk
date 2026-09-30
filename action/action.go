@@ -49,12 +49,14 @@ var emptyObjectSchema = json.RawMessage(`{"type":"object","additionalProperties"
 // Meta is catalog metadata for an action binary.
 type Meta struct {
 	Name        string `json:"name"`
+	Version     string `json:"version,omitempty"`
 	Description string `json:"description,omitempty"`
 }
 
 // Document is the machine-readable describe payload printed for --describe.
 type Document struct {
 	Name         string          `json:"name"`
+	Version      string          `json:"version,omitempty"`
 	Description  string          `json:"description,omitempty"`
 	InputSchema  json.RawMessage `json:"input_schema"`
 	OutputSchema json.RawMessage `json:"output_schema"`
@@ -214,6 +216,7 @@ func Describe[In, Out any](meta Meta) (Document, error) {
 	}
 	return Document{
 		Name:         meta.Name,
+		Version:      meta.Version,
 		Description:  meta.Description,
 		InputSchema:  inSchema,
 		OutputSchema: outSchema,

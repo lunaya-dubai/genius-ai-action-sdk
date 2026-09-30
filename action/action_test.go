@@ -55,12 +55,13 @@ func TestWriteOutput(t *testing.T) {
 func TestDescribe(t *testing.T) {
 	doc, err := action.Describe[sampleIn, sampleOut](action.Meta{
 		Name:        "Sample",
+		Version:     "1.2.3",
 		Description: "demo",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if doc.Name != "Sample" || doc.Description != "demo" {
+	if doc.Name != "Sample" || doc.Description != "demo" || doc.Version != "1.2.3" {
 		t.Fatalf("meta: %+v", doc)
 	}
 	var inDecoded map[string]any

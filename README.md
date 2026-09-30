@@ -23,6 +23,7 @@ type Output struct {
 func main() {
 	action.Main(action.Meta{
 		Name:        "Echo",
+		Version:     "1",
 		Description: "Echo a message",
 	}, func(ctx context.Context, in Input) (Output, error) {
 		return Output{OK: in.Message != ""}, nil
@@ -51,6 +52,10 @@ The workflow runtime sets these in action containers:
 | `GENAI_S3_URL` / `GENAI_S3_ID` / `GENAI_S3_SECRET` / `GENAI_S3_BUCKET` | Platform object storage (`s3` package) |
 
 Credentials: call `action.ResolveCredential` / `ResolveCredentialHeaders` with a `credentialId` from the workflow input. Never log secrets.
+
+## Version + rebuild skip
+
+Set `Meta.Version` (string). It is emitted on `--describe` as `"version"`. BuildAction skips Build/Push when the catalog already has the same version + image for that action. **Bump the version manually** when you want that package rebuilt (adding a new package does not rebuild others).
 
 ## Enum fields
 
