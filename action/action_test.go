@@ -78,6 +78,49 @@ func TestDescribe(t *testing.T) {
 	}
 }
 
+func TestSchemaForEnumTag(t *testing.T) {
+	type in struct {
+		Method string `json:"method" jsonschema:"HTTP method" enum:"GET,POST,PUT"`
+		URL    string `json:"url"`
+	}
+	raw, err := action.SchemaFor(in{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	props := decoded["properties"].(map[string]any)
+	method := props["method"].(map[string]any)
+	enum, ok := method["enum"].([]any)
+	if !ok {
+		t.Fatalf("method.enum missing: %#v", method)
+	}
+	want := []string{"GET", "POST", "PUT"}
+	if len(enum) != len(want) {
+		t.Fatalf("enum=%v want %v", enum, want)
+	}
+	for i, v := range want {
+		if enum[i] != v {
+			t.Fatalf("enum[%d]=%v want %q", i, enum[i], v)
+		}
+	}
+	url := props["url"].(map[string]any)
+	if _, has := url["enum"]; has {
+		t.Fatalf("url should not have enum: %#v", url)
+	}
+}
+
+func TestSchemaForEnumTagRejectsEmptyToken(t *testing.T) {
+	type bad struct {
+		Op string `json:"op" enum:"eq,,ne"`
+	}
+	if _, err := action.SchemaFor(bad{}); err == nil {
+		t.Fatal("expected error for empty enum token")
+	}
+}
+
 func TestMainDescribeFlag(t *testing.T) {
 	dir := t.TempDir()
 	mod := filepath.Join(dir, "go.mod")

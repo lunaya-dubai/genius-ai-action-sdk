@@ -13,6 +13,7 @@ import (
 
 type Input struct {
 	Message string `json:"message"`
+	Method  string `json:"method,omitempty" enum:"GET,POST,PUT,PATCH,DELETE,HEAD"`
 }
 
 type Output struct {
@@ -50,6 +51,16 @@ The workflow runtime sets these in action containers:
 | `GENAI_S3_URL` / `GENAI_S3_ID` / `GENAI_S3_SECRET` / `GENAI_S3_BUCKET` | Platform object storage (`s3` package) |
 
 Credentials: call `action.ResolveCredential` / `ResolveCredentialHeaders` with a `credentialId` from the workflow input. Never log secrets.
+
+## Enum fields
+
+`google/jsonschema-go` treats `jsonschema` tags as descriptions only. For closed string sets, add a separate tag:
+
+```go
+Method string `json:"method" jsonschema:"HTTP method" enum:"GET,POST,PUT,PATCH,DELETE,HEAD"`
+```
+
+`SchemaFor` / `--describe` emit JSON Schema `"enum": [...]` (string values only). Invalid values fail input validation before the handler runs.
 
 ## License
 

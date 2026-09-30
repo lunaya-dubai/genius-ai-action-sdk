@@ -31,6 +31,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -95,6 +96,10 @@ func WriteOutput(w io.Writer, v any) error {
 
 // SchemaFor infers a JSON Schema from a Go value's type.
 // Nil yields an empty object schema. FileRef and SecretRef get x-genai.kind metadata.
+//
+// Closed string sets: add enum:"a,b,c" on a string field (comma-separated, trimmed).
+// Values are injected as JSON Schema "enum" after inference; validation rejects other
+// strings on describe/run.
 func SchemaFor(v any) (json.RawMessage, error) {
 	if v == nil {
 		return append(json.RawMessage(nil), emptyObjectSchema...), nil
@@ -109,7 +114,90 @@ func SchemaFor(v any) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := applyEnumTags(t, schema); err != nil {
+		return nil, err
+	}
 	return json.Marshal(schema)
+}
+
+// applyEnumTags walks exported struct fields and sets Enum on matching schema
+// properties from the enum:"a,b,c" tag. Anonymous embeddings share the parent
+// property map; named nested structs recurse into their property schema.
+func applyEnumTags(t reflect.Type, schema *jsonschema.Schema) error {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct || schema == nil {
+		return nil
+	}
+	if schema.Properties == nil {
+		schema.Properties = map[string]*jsonschema.Schema{}
+	}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.Anonymous {
+			if err := applyEnumTags(f.Type, schema); err != nil {
+				return err
+			}
+			continue
+		}
+		if !f.IsExported() {
+			continue
+		}
+		name := jsonFieldName(f)
+		if name == "" || name == "-" {
+			continue
+		}
+		enumTag := strings.TrimSpace(f.Tag.Get("enum"))
+		if enumTag != "" {
+			vals, err := parseEnumTag(enumTag)
+			if err != nil {
+				return fmt.Errorf("field %s: %w", f.Name, err)
+			}
+			prop := schema.Properties[name]
+			if prop == nil {
+				prop = &jsonschema.Schema{Type: "string"}
+				schema.Properties[name] = prop
+			}
+			prop.Enum = vals
+			continue
+		}
+		ft := f.Type
+		for ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+		if ft.Kind() == reflect.Struct && schema.Properties[name] != nil {
+			if err := applyEnumTags(ft, schema.Properties[name]); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func jsonFieldName(f reflect.StructField) string {
+	tag := f.Tag.Get("json")
+	if tag == "" {
+		return f.Name
+	}
+	name, _, _ := strings.Cut(tag, ",")
+	return name
+}
+
+func parseEnumTag(tag string) ([]any, error) {
+	parts := strings.Split(tag, ",")
+	out := make([]any, 0, len(parts))
+	for _, p := range parts {
+		v := strings.TrimSpace(p)
+		if v == "" {
+			return nil, fmt.Errorf("enum tag has empty value")
+		}
+		out = append(out, v)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("enum tag is empty")
+	}
+	return out, nil
 }
 
 // Describe builds a [Document] from meta and the In/Out type parameters.
