@@ -122,6 +122,90 @@ func TestSchemaForEnumTagRejectsEmptyToken(t *testing.T) {
 	}
 }
 
+func TestSchemaForWhenTag(t *testing.T) {
+	type in struct {
+		Mode  string `json:"mode" enum:"if,switch"`
+		Op    string `json:"op,omitempty" enum:"eq,ne" when:"mode=if"`
+		Left  any    `json:"left,omitempty" when:"mode=if"`
+		Value any    `json:"value,omitempty" when:"mode=switch"`
+		Always string `json:"always"`
+	}
+	raw, err := action.SchemaFor(in{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	props := decoded["properties"].(map[string]any)
+	op := props["op"].(map[string]any)
+	xg := op["x-genai"].(map[string]any)
+	when := xg["when"].(map[string]any)
+	if when["field"] != "mode" {
+		t.Fatalf("when.field=%v", when["field"])
+	}
+	inVals, ok := when["in"].([]any)
+	if !ok || len(inVals) != 1 || inVals[0] != "if" {
+		t.Fatalf("when.in=%v", when["in"])
+	}
+	if _, has := op["enum"]; !has {
+		t.Fatal("op should keep enum")
+	}
+	val := props["value"].(map[string]any)
+	vin := val["x-genai"].(map[string]any)["when"].(map[string]any)["in"].([]any)
+	if len(vin) != 1 || vin[0] != "switch" {
+		t.Fatalf("value when.in=%v", vin)
+	}
+	always := props["always"].(map[string]any)
+	if _, has := always["x-genai"]; has {
+		t.Fatalf("always should have no x-genai: %#v", always)
+	}
+	mode := props["mode"].(map[string]any)
+	if _, has := mode["x-genai"]; has {
+		t.Fatalf("discriminator should have no when: %#v", mode)
+	}
+}
+
+func TestSchemaForWhenTagMultipleValues(t *testing.T) {
+	type in struct {
+		Op    string `json:"operation" enum:"a,b,c"`
+		Field string `json:"field,omitempty" when:"operation=a,b"`
+	}
+	raw, err := action.SchemaFor(in{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	when := decoded["properties"].(map[string]any)["field"].(map[string]any)["x-genai"].(map[string]any)["when"].(map[string]any)
+	inVals := when["in"].([]any)
+	if when["field"] != "operation" || len(inVals) != 2 || inVals[0] != "a" || inVals[1] != "b" {
+		t.Fatalf("when=%v", when)
+	}
+}
+
+func TestSchemaForWhenTagRejectsTwoDiscriminators(t *testing.T) {
+	type bad struct {
+		A string `json:"a,omitempty" when:"mode=if"`
+		B string `json:"b,omitempty" when:"operation=create"`
+	}
+	if _, err := action.SchemaFor(bad{}); err == nil {
+		t.Fatal("expected error for multiple discriminators")
+	}
+}
+
+func TestSchemaForWhenTagRejectsEmptyToken(t *testing.T) {
+	type bad struct {
+		A string `json:"a,omitempty" when:"mode=if,"`
+	}
+	if _, err := action.SchemaFor(bad{}); err == nil {
+		t.Fatal("expected error for empty when token")
+	}
+}
+
 func TestMainDescribeFlag(t *testing.T) {
 	dir := t.TempDir()
 	mod := filepath.Join(dir, "go.mod")

@@ -31,6 +31,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -102,6 +103,9 @@ func WriteOutput(w io.Writer, v any) error {
 // Closed string sets: add enum:"a,b,c" on a string field (comma-separated, trimmed).
 // Values are injected as JSON Schema "enum" after inference; validation rejects other
 // strings on describe/run.
+//
+// Mode-dependent fields: add when:"disc=v1,v2" so the canvas can hide unused
+// properties. Emitted as x-genai.when on that property (field + in).
 func SchemaFor(v any) (json.RawMessage, error) {
 	if v == nil {
 		return append(json.RawMessage(nil), emptyObjectSchema...), nil
@@ -116,16 +120,25 @@ func SchemaFor(v any) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := applyEnumTags(t, schema); err != nil {
+	discs := map[string]struct{}{}
+	if err := applySchemaTags(t, schema, discs); err != nil {
 		return nil, err
+	}
+	if len(discs) > 1 {
+		names := make([]string, 0, len(discs))
+		for n := range discs {
+			names = append(names, n)
+		}
+		slices.Sort(names)
+		return nil, fmt.Errorf("when tags name multiple discriminators: %s", strings.Join(names, ", "))
 	}
 	return json.Marshal(schema)
 }
 
-// applyEnumTags walks exported struct fields and sets Enum on matching schema
-// properties from the enum:"a,b,c" tag. Anonymous embeddings share the parent
-// property map; named nested structs recurse into their property schema.
-func applyEnumTags(t reflect.Type, schema *jsonschema.Schema) error {
+// applySchemaTags walks exported struct fields and applies enum:"a,b,c" and
+// when:"disc=v1,v2" onto matching schema properties. Anonymous embeddings share
+// the parent property map; named nested structs recurse into their property schema.
+func applySchemaTags(t reflect.Type, schema *jsonschema.Schema, discs map[string]struct{}) error {
 	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -138,7 +151,7 @@ func applyEnumTags(t reflect.Type, schema *jsonschema.Schema) error {
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		if f.Anonymous {
-			if err := applyEnumTags(f.Type, schema); err != nil {
+			if err := applySchemaTags(f.Type, schema, discs); err != nil {
 				return err
 			}
 			continue
@@ -150,26 +163,45 @@ func applyEnumTags(t reflect.Type, schema *jsonschema.Schema) error {
 		if name == "" || name == "-" {
 			continue
 		}
+		prop := schema.Properties[name]
 		enumTag := strings.TrimSpace(f.Tag.Get("enum"))
 		if enumTag != "" {
-			vals, err := parseEnumTag(enumTag)
+			vals, err := parseCommaList(enumTag)
 			if err != nil {
-				return fmt.Errorf("field %s: %w", f.Name, err)
+				return fmt.Errorf("field %s enum: %w", f.Name, err)
 			}
-			prop := schema.Properties[name]
 			if prop == nil {
 				prop = &jsonschema.Schema{Type: "string"}
 				schema.Properties[name] = prop
 			}
-			prop.Enum = vals
-			continue
+			anyVals := make([]any, len(vals))
+			for i, v := range vals {
+				anyVals[i] = v
+			}
+			prop.Enum = anyVals
+		}
+		whenTag := strings.TrimSpace(f.Tag.Get("when"))
+		if whenTag != "" {
+			disc, vals, err := parseWhenTag(whenTag)
+			if err != nil {
+				return fmt.Errorf("field %s: %w", f.Name, err)
+			}
+			if disc == name {
+				return fmt.Errorf("field %s: when tag cannot target itself", f.Name)
+			}
+			discs[disc] = struct{}{}
+			if prop == nil {
+				prop = &jsonschema.Schema{}
+				schema.Properties[name] = prop
+			}
+			mergeXGenai(prop, "when", map[string]any{"field": disc, "in": vals})
 		}
 		ft := f.Type
 		for ft.Kind() == reflect.Pointer {
 			ft = ft.Elem()
 		}
 		if ft.Kind() == reflect.Struct && schema.Properties[name] != nil {
-			if err := applyEnumTags(ft, schema.Properties[name]); err != nil {
+			if err := applySchemaTags(ft, schema.Properties[name], discs); err != nil {
 				return err
 			}
 		}
@@ -186,20 +218,49 @@ func jsonFieldName(f reflect.StructField) string {
 	return name
 }
 
-func parseEnumTag(tag string) ([]any, error) {
+func parseCommaList(tag string) ([]string, error) {
 	parts := strings.Split(tag, ",")
-	out := make([]any, 0, len(parts))
+	out := make([]string, 0, len(parts))
 	for _, p := range parts {
 		v := strings.TrimSpace(p)
 		if v == "" {
-			return nil, fmt.Errorf("enum tag has empty value")
+			return nil, fmt.Errorf("empty value")
 		}
 		out = append(out, v)
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("enum tag is empty")
+		return nil, fmt.Errorf("empty")
 	}
 	return out, nil
+}
+
+func parseWhenTag(tag string) (field string, values []string, err error) {
+	idx := strings.Index(tag, "=")
+	if idx <= 0 {
+		return "", nil, fmt.Errorf("when tag must be field=v1,v2")
+	}
+	field = strings.TrimSpace(tag[:idx])
+	if field == "" {
+		return "", nil, fmt.Errorf("when tag has empty discriminator")
+	}
+	values, err = parseCommaList(tag[idx+1:])
+	if err != nil {
+		return "", nil, fmt.Errorf("when tag: %w", err)
+	}
+	return field, values, nil
+}
+
+func mergeXGenai(prop *jsonschema.Schema, key string, val any) {
+	if prop.Extra == nil {
+		prop.Extra = map[string]any{}
+	}
+	raw, ok := prop.Extra["x-genai"]
+	m, _ := raw.(map[string]any)
+	if !ok || m == nil {
+		m = map[string]any{}
+		prop.Extra["x-genai"] = m
+	}
+	m[key] = val
 }
 
 // Describe builds a [Document] from meta and the In/Out type parameters.

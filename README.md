@@ -67,6 +67,25 @@ Method string `json:"method" jsonschema:"HTTP method" enum:"GET,POST,PUT,PATCH,D
 
 `SchemaFor` / `--describe` emit JSON Schema `"enum": [...]` (string values only). Invalid values fail input validation before the handler runs.
 
+## Mode-dependent fields (`when`)
+
+When one enum field switches which other inputs apply (Branch `mode`, ProductCall `operation`), tag those fields:
+
+```go
+Mode string `json:"mode" enum:"if,switch"`
+Op   string `json:"op,omitempty" enum:"eq,ne" when:"mode=if"`
+Left any    `json:"left,omitempty" when:"mode=if"`
+Value any   `json:"value,omitempty" when:"mode=switch,if"` // visible for any listed value
+```
+
+`--describe` emits on that property:
+
+```json
+"x-genai": { "when": { "field": "mode", "in": ["if"] } }
+```
+
+Untagged fields are always visible. The GUI walks `inputSchema.properties` — no root field-name map. One discriminator per input struct.
+
 ## License
 
 Apache-2.0 — see [LICENSE](./LICENSE).
