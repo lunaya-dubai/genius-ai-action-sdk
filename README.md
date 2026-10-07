@@ -25,6 +25,7 @@ func main() {
 		Name:        "Echo",
 		Version:     "1",
 		Description: "Echo a message",
+		Categories:  []string{"Utility"}, // first entry is primary palette group
 	}, func(ctx context.Context, in Input) (Output, error) {
 		return Output{OK: in.Message != ""}, nil
 	})
@@ -56,6 +57,19 @@ Credentials: call `action.ResolveCredential` / `ResolveCredentialHeaders` with a
 ## Version + rebuild skip
 
 Set `Meta.Version` (string). It is emitted on `--describe` as `"version"`. BuildAction skips Build/Push when the catalog already has the same version + image for that action. **Bump the version manually** when you want that package rebuilt (adding a new package does not rebuild others).
+
+## Categories (palette groups)
+
+Set `Meta.Categories` (ordered strings). `--describe` emits `"categories": [...]`.
+
+- **First entry is primary** — the BFF maps it to palette `group`.
+- Later entries are optional secondary sections the UI may also show.
+- Empty / omitted → consumers fall back to `"Actions"`.
+- Values are trimmed; empties dropped; duplicates removed (case-sensitive), order preserved.
+
+```go
+Categories: []string{"Apps", "Files"}, // primary Apps; also list under Files
+```
 
 ## Enum fields
 

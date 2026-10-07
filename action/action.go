@@ -52,6 +52,9 @@ type Meta struct {
 	Name        string `json:"name"`
 	Version     string `json:"version,omitempty"`
 	Description string `json:"description,omitempty"`
+	// Categories are ordered palette labels. The first entry is primary; later
+	// entries are optional secondary sections the UI may also show.
+	Categories []string `json:"categories,omitempty"`
 }
 
 // Document is the machine-readable describe payload printed for --describe.
@@ -59,6 +62,7 @@ type Document struct {
 	Name         string          `json:"name"`
 	Version      string          `json:"version,omitempty"`
 	Description  string          `json:"description,omitempty"`
+	Categories   []string        `json:"categories,omitempty"`
 	InputSchema  json.RawMessage `json:"input_schema"`
 	OutputSchema json.RawMessage `json:"output_schema"`
 }
@@ -279,9 +283,34 @@ func Describe[In, Out any](meta Meta) (Document, error) {
 		Name:         meta.Name,
 		Version:      meta.Version,
 		Description:  meta.Description,
+		Categories:   NormalizeCategories(meta.Categories),
 		InputSchema:  inSchema,
 		OutputSchema: outSchema,
 	}, nil
+}
+
+// NormalizeCategories trims empties, keeps order, and dedupes case-sensitively.
+func NormalizeCategories(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(in))
+	out := make([]string, 0, len(in))
+	for _, c := range in {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		if _, ok := seen[c]; ok {
+			continue
+		}
+		seen[c] = struct{}{}
+		out = append(out, c)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // Main handles --describe or runs the action handler against stdin/stdout

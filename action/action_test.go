@@ -57,12 +57,22 @@ func TestDescribe(t *testing.T) {
 		Name:        "Sample",
 		Version:     "1.2.3",
 		Description: "demo",
+		Categories:  []string{" Apps ", "Data", "Apps", "", "Flow"},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if doc.Name != "Sample" || doc.Description != "demo" || doc.Version != "1.2.3" {
 		t.Fatalf("meta: %+v", doc)
+	}
+	wantCats := []string{"Apps", "Data", "Flow"}
+	if len(doc.Categories) != len(wantCats) {
+		t.Fatalf("categories: %#v", doc.Categories)
+	}
+	for i := range wantCats {
+		if doc.Categories[i] != wantCats[i] {
+			t.Fatalf("categories: %#v", doc.Categories)
+		}
 	}
 	var inDecoded map[string]any
 	if err := json.Unmarshal(doc.InputSchema, &inDecoded); err != nil {
