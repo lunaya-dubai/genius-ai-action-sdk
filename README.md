@@ -71,6 +71,14 @@ Set `Meta.Categories` (ordered strings). `--describe` emits `"categories": [...]
 Categories: []string{"Apps", "Files"}, // primary Apps; also list under Files
 ```
 
+## Icon URL
+
+Set `Meta.IconURL` to a public `http` or `https` image. `--describe` emits `"icon_url"`. Empty is fine. Userinfo in the URL is rejected. The catalog stores it and the canvas loads it with the node; it is not written onto the workflow document. Changing only the icon does not require a version bump — a catalog sync still upserts describe metadata when the image build is skipped.
+
+```go
+IconURL: "https://s3.geniusai.io/genai/public/svg/gmail.svg",
+```
+
 ## Enum fields
 
 `google/jsonschema-go` treats `jsonschema` tags as descriptions only. For closed string sets, add a separate tag:

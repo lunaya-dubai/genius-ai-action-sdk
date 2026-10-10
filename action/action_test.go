@@ -58,6 +58,7 @@ func TestDescribe(t *testing.T) {
 		Version:     "1.2.3",
 		Description: "demo",
 		Categories:  []string{" Apps ", "Data", "Apps", "", "Flow"},
+		IconURL:     " https://s3.geniusai.io/genai/public/svg/gmail.svg ",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -74,6 +75,9 @@ func TestDescribe(t *testing.T) {
 			t.Fatalf("categories: %#v", doc.Categories)
 		}
 	}
+	if doc.IconURL != "https://s3.geniusai.io/genai/public/svg/gmail.svg" {
+		t.Fatalf("icon: %q", doc.IconURL)
+	}
 	var inDecoded map[string]any
 	if err := json.Unmarshal(doc.InputSchema, &inDecoded); err != nil {
 		t.Fatal(err)
@@ -86,6 +90,23 @@ func TestDescribe(t *testing.T) {
 	token := props["token"].(map[string]any)
 	if token["x-genai"].(map[string]any)["kind"] != "secret" {
 		t.Fatalf("token kind: %#v", token["x-genai"])
+	}
+}
+
+func TestNormalizeIconURL(t *testing.T) {
+	got, err := action.NormalizeIconURL("  ")
+	if err != nil || got != "" {
+		t.Fatalf("empty: %q %v", got, err)
+	}
+	for _, bad := range []string{
+		"javascript:alert(1)",
+		"https://user:pass@example.com/a.svg",
+		"not a url",
+		"ftp://example.com/a.svg",
+	} {
+		if _, err := action.NormalizeIconURL(bad); err == nil {
+			t.Fatalf("accepted %q", bad)
+		}
 	}
 }
 

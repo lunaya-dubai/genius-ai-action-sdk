@@ -29,6 +29,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"reflect"
 	"slices"
@@ -55,6 +56,8 @@ type Meta struct {
 	// Categories are ordered palette labels. The first entry is primary; later
 	// entries are optional secondary sections the UI may also show.
 	Categories []string `json:"categories,omitempty"`
+	// IconURL is an optional public http(s) image for the palette and canvas.
+	IconURL string `json:"icon_url,omitempty"`
 }
 
 // Document is the machine-readable describe payload printed for --describe.
@@ -63,6 +66,7 @@ type Document struct {
 	Version      string          `json:"version,omitempty"`
 	Description  string          `json:"description,omitempty"`
 	Categories   []string        `json:"categories,omitempty"`
+	IconURL      string          `json:"icon_url,omitempty"`
 	InputSchema  json.RawMessage `json:"input_schema"`
 	OutputSchema json.RawMessage `json:"output_schema"`
 }
@@ -279,14 +283,33 @@ func Describe[In, Out any](meta Meta) (Document, error) {
 	if err != nil {
 		return Document{}, fmt.Errorf("output schema: %w", err)
 	}
+	icon, err := NormalizeIconURL(meta.IconURL)
+	if err != nil {
+		return Document{}, err
+	}
 	return Document{
 		Name:         meta.Name,
 		Version:      meta.Version,
 		Description:  meta.Description,
 		Categories:   NormalizeCategories(meta.Categories),
+		IconURL:      icon,
 		InputSchema:  inSchema,
 		OutputSchema: outSchema,
 	}, nil
+}
+
+// NormalizeIconURL trims an optional icon URL. Empty is valid. A non-empty
+// value must be an http or https URL with a host and no userinfo.
+func NormalizeIconURL(raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil {
+		return "", fmt.Errorf("icon URL must be an http(s) URL with no userinfo")
+	}
+	return raw, nil
 }
 
 // NormalizeCategories trims empties, keeps order, and dedupes case-sensitively.
